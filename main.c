@@ -23,6 +23,8 @@ int main(void) {
     char cmdline[MAXLINE];
 
     /* 쉘 자체는 Ctrl+C(SIGINT), Ctrl+Z(SIGTSTP)에 죽거나 중단되지 않도록 무시  SIG_IGN는 해당 시그널을 무시는 메크로*/
+
+
     signal(SIGINT, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
 
