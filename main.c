@@ -1,10 +1,11 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+
 #include <unistd.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+
 
 #define MAXLINE 8192
 #define MAXARGS 128
@@ -12,6 +13,7 @@
 /* 함수 프로토타입 (PPT 4쪽 shellex.c 구조) */
 void eval(char *cmdline);
 int parseline(char *buf, char **argv);
+
 int builtin_command(char **argv);
 
 /* 시그널 핸들러 프로토타입 (10장 PPT 방식) */
@@ -24,10 +26,12 @@ int main(void) {
     signal(SIGINT, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
 
+
     /* ALARM 명령어용 SIGALRM 핸들러 등록 (PPT 30쪽, 47쪽 참고) */
     signal(SIGALRM, sigalrm_handler);
 
     while (1) {
+
         /* Read */
         printf("%% ");
         fflush(stdout);
@@ -42,8 +46,10 @@ int main(void) {
             continue;
         }
 
+
         /* Evaluate */
         eval(cmdline);
+
     }
 
     return 0;
@@ -74,6 +80,8 @@ void eval(char *cmdline) {
             /* 가산점: 포그라운드 자식은 Ctrl+C(SIGINT)를 받으면 종료되도록 기본 동작 복구 */
             signal(SIGINT, SIG_DFL);
 
+
+
             if (execvp(argv[0], argv) < 0) {
                 printf("%s: Command not found.\n", argv[0]);
                 exit(1);
@@ -81,9 +89,11 @@ void eval(char *cmdline) {
         } else {
             /* [부모 프로세스 (쉘)] */
             int status;
+
             if (waitpid(pid, &status, 0) < 0) {
                 perror("waitpid error");
             }
+
         }
     }
 }
@@ -117,4 +127,6 @@ int parseline(char *buf, char **argv) {
 void sigalrm_handler(int sig) {
     printf("\nAlarm Arrived!!\n%% ");
     fflush(stdout);
+=======
+
 }
