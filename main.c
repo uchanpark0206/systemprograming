@@ -2,64 +2,119 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#define MAX_LINE 1024
-#define MAX_ARGS 64
+#define MAXLINE 8192
+#define MAXARGS 128
+
+/* 함수 프로토타입 (PPT 4쪽 shellex.c 구조) */
+void eval(char *cmdline);
+int parseline(char *buf, char **argv);
+int builtin_command(char **argv);
+
+/* 시그널 핸들러 프로토타입 (10장 PPT 방식) */
+void sigalrm_handler(int sig);
 
 int main(void) {
-    char line[MAX_LINE];
-    char *args[MAX_ARGS];
+    char cmdline[MAXLINE];
+
+    /* 쉘 자체는 Ctrl+C(SIGINT), Ctrl+Z(SIGTSTP)에 죽거나 중단되지 않도록 무시 */
+    signal(SIGINT, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);
+
+    /* ALARM 명령어용 SIGALRM 핸들러 등록 (PPT 30쪽, 47쪽 참고) */
+    signal(SIGALRM, sigalrm_handler);
 
     while (1) {
-        // 1. 프롬프트 출력 (버퍼를 비워 즉시 화면에 표시)
+        /* Read */
         printf("%% ");
         fflush(stdout);
 
-        // 2. 한 줄 입력 받기 (Ctrl+D 입력 시 종료)
-        if (fgets(line, sizeof(line), stdin) == NULL) {
-            printf("\n");
-            break;
-        }
-
-        // 3. 공백/탭/개행 기준으로 분리 -> args 배열 구성
-        int argc = 0;
-        char *token = strtok(line, " \t\n");
-        while (token != NULL && argc < MAX_ARGS - 1) {
-            args[argc] = token;
-            argc++;
-            token = strtok(NULL, " \t\n");
-        }
-        args[argc] = NULL; // execvp() 인자 배열은 반드시 NULL로 종료
-
-        // 엔터만 입력시 다시 프롬프트로
-        if (argc == 0) {
+        if (fgets(cmdline, MAXLINE, stdin) == NULL) {
+            if (feof(stdin)) {
+                printf("\n");
+                exit(0);
+            }
+            /* 시그널(SIGALRM 등)에 의해 fgets가 중단된 경우 루프 재개 */
+            clearerr(stdin);
             continue;
         }
 
-        // 4. 내장 명령어 처리: exit, logout (부모 프로세스에서 직접 종료)
-        if (strcmp(args[0], "exit") == 0 || strcmp(args[0], "logout") == 0) {
-            exit(0);
-        }
-
-        // 5. 외부 명령어 실행
-        pid_t pid = fork();
-
-        if (pid < 0) {
-            perror("fork failed");
-        } else if (pid == 0) {
-            // [자식 프로세스]
-            if (execvp(args[0], args) < 0) {
-                perror("execvp failed");
-                exit(1); // exec 실패 시 자식이 쉘 루프를 돌지 않도록 즉시 종료
-            }
-        } else {
-            // [부모 프로세스 (쉘)]
-            int status;
-            waitpid(pid, &status, 0); // 자식 종료 대기 및 회수(reaping)
-        }
+        /* Evaluate */
+        eval(cmdline);
     }
 
     return 0;
+}
+
+/* eval: 명령어 한 줄을 파싱하고 실행 */
+void eval(char *cmdline) {
+    char *argv[MAXARGS];
+    char buf[MAXLINE];
+    pid_t pid;
+
+    strcpy(buf, cmdline);
+    parseline(buf, argv);
+
+    if (argv[0] == NULL) {
+        return; /* 빈 줄 무시 */
+    }
+
+    /* 내장 명령어가 아니면 자식 프로세스 생성 후 실행 */
+    if (!builtin_command(argv)) {
+        if ((pid = fork()) < 0) {
+            perror("fork error");
+            return;
+        }
+
+        if (pid == 0) {
+            /* [자식 프로세스] */
+            /* 가산점: 포그라운드 자식은 Ctrl+C(SIGINT)를 받으면 종료되도록 기본 동작 복구 */
+            signal(SIGINT, SIG_DFL);
+
+            if (execvp(argv[0], argv) < 0) {
+                printf("%s: Command not found.\n", argv[0]);
+                exit(1);
+            }
+        } else {
+            /* [부모 프로세스 (쉘)] */
+            int status;
+            if (waitpid(pid, &status, 0) < 0) {
+                perror("waitpid error");
+            }
+        }
+    }
+}
+
+/* builtin_command: 내장 명령어이면 실행 후 1 반환, 아니면 0 반환 */
+int builtin_command(char **argv) {
+    if (strcmp(argv[0], "exit") == 0 || strcmp(argv[0], "logout") == 0) {
+        exit(0);
+    }
+
+    /* 추후 여기에 cd, DIR, ALARM 분기 추가 */
+
+    return 0;
+}
+
+/* parseline: 입력 문자열을 공백/탭/개행 기준으로 분리해 argv 배열 구성 */
+int parseline(char *buf, char **argv) {
+    int argc = 0;
+    char *token = strtok(buf, " \t\n");
+
+    while (token != NULL && argc < MAXARGS - 1) {
+        argv[argc++] = token;
+        token = strtok(NULL, " \t\n");
+    }
+    argv[argc] = NULL;
+
+    return 0;
+}
+
+/* SIGALRM 핸들러 (ALARM 명령어 만료 시 호출) */
+void sigalrm_handler(int sig) {
+    printf("\nAlarm Arrived!!\n%% ");
+    fflush(stdout);
 }
